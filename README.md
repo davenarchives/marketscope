@@ -1,12 +1,13 @@
 # Market Scope
 
-Production-oriented MVP for a real-time market intelligence dashboard.
+Production-oriented MVP for a live-updating market intelligence dashboard.
 
 ## Stack
 
-- Frontend: Next.js, TypeScript, Tailwind CSS, Radix UI, lightweight-charts, Recharts, Socket.IO client
-- Backend: Node.js, Express.js, Socket.IO
+- App: Next.js App Router, TypeScript, Tailwind CSS, lightweight-charts, Recharts
+- API: Next.js Route Handlers under `apps/frontend/app/api`
 - Data: Finnhub primary, Yahoo Finance secondary, simulated fallback
+- Realtime model: client polling of `/api/snapshot`
 - Persistence: localStorage on the client, optional PostgreSQL watchlist table
 - Cache: optional Redis, in-memory fallback
 
@@ -15,17 +16,11 @@ Production-oriented MVP for a real-time market intelligence dashboard.
 ```text
 market-scope/
   apps/
-    backend/
-      src/
-        data/              # index symbols, base signals, bubble sectors
-        realtime/          # Socket.IO snapshot broadcaster
-        routes/            # REST API routes
-        services/          # cache, providers, watchlist store, market service
-        server.ts          # Express app entry
     frontend/
-      app/                 # Next.js app router
+      app/                 # Next.js app router and API routes
       components/          # dashboard UI
-      lib/                 # API client and shared types
+      lib/                 # API client, shared types, server market services
+    backend/               # legacy Express/Socket.IO server, not needed for Vercel
   .env.example
   package.json
 ```
@@ -40,26 +35,19 @@ npm run dev
 
 Open `http://localhost:3000`.
 
-The backend listens on `http://localhost:4000`.
-
-The dashboard includes a Radix Switch theme toggle in the sidebar. The selected light/dark theme is stored in localStorage.
+The app serves both the dashboard and API routes from the same Next.js dev server.
 
 ## Environment Variables
 
 ```text
-PORT=4000
-CORS_ORIGIN=http://localhost:3000
 FINNHUB_API_KEY=
 YAHOO_FINANCE_ENABLED=true
 REDIS_URL=
 DATABASE_URL=
 CACHE_TTL_SECONDS=5
-MARKET_TICK_INTERVAL_MS=5000
-NEXT_PUBLIC_API_URL=http://localhost:4000
-NEXT_PUBLIC_WS_URL=http://localhost:4000
 ```
 
-Without API keys or infrastructure, the app still runs with Yahoo Finance where available and simulated data as the final fallback.
+Without API keys or infrastructure, the app still runs with Yahoo Finance where available and simulated data as the final fallback. On Vercel, use `DATABASE_URL` for persistent watchlists and `REDIS_URL` for shared cache if needed.
 
 ## API Routes
 
@@ -74,25 +62,20 @@ Without API keys or infrastructure, the app still runs with Yahoo Finance where 
 - `GET /api/signals`
 - `GET /api/bubbles`
 
-## WebSocket Events
+## Vercel Deployment
 
-- `market:snapshot`: broadcasts indices, watchlist quotes, OHLC candles, signals, bubble sectors, and timestamp every three seconds
-- `connection:ready`: confirms the socket connection
+Import the repository into Vercel and set:
 
-`market:snapshot` also includes `candles`, a map of symbol to OHLC arrays:
-
-```json
-{
-  "time": 1713984000,
-  "open": 5120.25,
-  "high": 5132.4,
-  "low": 5118.1,
-  "close": 5128.8
-}
+```text
+Root Directory: apps/frontend
+Build Command: npm run build
+Install Command: npm install
 ```
+
+Set the environment variables from `.env.example`. Do not set `NEXT_PUBLIC_API_URL` for the all-Vercel deployment; the browser calls same-origin `/api/*` routes.
 
 ## Data Flow
 
 ```text
-External APIs -> Backend -> Redis or memory cache -> WebSocket/REST -> Frontend
+External APIs -> Next API routes -> Redis or memory cache -> polling dashboard
 ```

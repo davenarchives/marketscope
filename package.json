@@ -7,11 +7,14 @@
     "apps/backend"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev --workspace apps/backend\" \"npm run dev --workspace apps/frontend\"",
+    "dev": "npm run dev --workspace apps/frontend",
+    "dev:legacy": "concurrently \"npm run dev --workspace apps/backend\" \"npm run dev --workspace apps/frontend\"",
     "dev:frontend": "npm run dev --workspace apps/frontend",
     "dev:backend": "npm run dev --workspace apps/backend",
-    "build": "npm run build --workspace apps/backend && npm run build --workspace apps/frontend",
-    "typecheck": "npm run typecheck --workspace apps/backend && npm run typecheck --workspace apps/frontend"
+    "build": "npm run build --workspace apps/frontend",
+    "build:legacy": "npm run build --workspace apps/backend && npm run build --workspace apps/frontend",
+    "typecheck": "npm run typecheck --workspace apps/frontend",
+    "typecheck:legacy": "npm run typecheck --workspace apps/backend && npm run typecheck --workspace apps/frontend"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

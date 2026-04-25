@@ -1,10 +1,9 @@
 import type { MarketCandle, Snapshot, SymbolSearchResult } from "./types";
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? API_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       "content-type": "application/json",
@@ -42,7 +41,7 @@ export function addWatchlistSymbol(symbol: string, name?: string) {
 }
 
 export async function removeWatchlistSymbol(symbol: string) {
-  const response = await fetch(`${API_URL}/api/watchlist/${encodeURIComponent(symbol)}`, {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist/${encodeURIComponent(symbol)}`, {
     method: "DELETE"
   });
 

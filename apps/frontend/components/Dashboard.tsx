@@ -28,8 +28,7 @@ import {
   XAxis,
   YAxis
 } from "recharts";
-import { io, type Socket } from "socket.io-client";
-import { addWatchlistSymbol, fetchSnapshot, fetchSymbols, removeWatchlistSymbol, WS_URL } from "@/lib/api";
+import { addWatchlistSymbol, fetchSnapshot, fetchSymbols, removeWatchlistSymbol } from "@/lib/api";
 import type { BubbleSector, MarketCategory, MarketQuote, MarketSignal, Snapshot, SymbolSearchResult } from "@/lib/types";
 import { CandlestickChart } from "./CandlestickChart";
 
@@ -161,24 +160,29 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetchSnapshot()
-      .then(setSnapshot)
-      .catch(() => setStatus("offline"));
+    let cancelled = false;
 
-    const socket: Socket = io(WS_URL, {
-      transports: ["websocket"],
-      reconnectionDelayMax: 5000
-    });
+    async function refreshSnapshot() {
+      try {
+        const nextSnapshot = await fetchSnapshot();
 
-    socket.on("connect", () => setStatus("live"));
-    socket.on("disconnect", () => setStatus("offline"));
-    socket.on("market:snapshot", (nextSnapshot: Snapshot) => {
-      setSnapshot(nextSnapshot);
-      setStatus("live");
-    });
+        if (!cancelled) {
+          setSnapshot(nextSnapshot);
+          setStatus("live");
+        }
+      } catch {
+        if (!cancelled) setStatus("offline");
+      }
+    }
+
+    void refreshSnapshot();
+    const interval = window.setInterval(() => {
+      void refreshSnapshot();
+    }, 5000);
 
     return () => {
-      socket.disconnect();
+      cancelled = true;
+      window.clearInterval(interval);
     };
   }, []);
 
