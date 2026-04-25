@@ -43,6 +43,23 @@ export interface BubbleSector {
   ytdChange: number;
 }
 
+export interface MarketSectionSnapshot {
+  id: string;
+  title: string;
+  quotes: MarketQuote[];
+  candles: Record<string, MarketCandle[]>;
+}
+
+export interface Snapshot {
+  indices: MarketQuote[];
+  watchlist: MarketQuote[];
+  candles: Record<string, MarketCandle[]>;
+  marketSections: MarketSectionSnapshot[];
+  signals: MarketSignal[];
+  bubbles: BubbleSector[];
+  updatedAt: string;
+}
+
 export interface WatchlistItem {
   symbol: string;
   name: string;

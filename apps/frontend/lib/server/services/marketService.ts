@@ -1,5 +1,5 @@
-import { BUBBLE_SECTORS, BASE_SIGNALS, INDEX_SYMBOLS } from "../data/symbols";
-import type { BubbleSector, MarketCandle, MarketQuote, MarketSignal, WatchlistItem } from "../types";
+import { BUBBLE_SECTORS, BASE_SIGNALS, INDEX_SYMBOLS, MARKET_SECTIONS } from "../data/symbols";
+import type { BubbleSector, MarketCandle, MarketQuote, MarketSectionSnapshot, MarketSignal, Snapshot, WatchlistItem } from "../types";
 import { CacheService } from "./cache";
 import { MarketDataProvider, type CandleRange, type SymbolMeta } from "./providers";
 import { WatchlistStore } from "./watchlistStore";
@@ -24,17 +24,20 @@ export class MarketService {
     return Promise.all(items.map((item) => this.cachedQuote(item)));
   }
 
-  async snapshot() {
+  async snapshot(): Promise<Snapshot> {
     const [indices, watchlist] = await Promise.all([this.indices(), this.watchlistQuotes()]);
     const symbols = [...indices, ...watchlist];
     const candleEntries = await Promise.all(
       symbols.map(async (quote) => [quote.symbol, await this.candles(quote.symbol, quote, "1d")] as const)
     );
+    const candles = Object.fromEntries(candleEntries);
+    const marketSections = await this.marketSections(indices, candles);
 
     return {
       indices,
       watchlist,
-      candles: Object.fromEntries(candleEntries),
+      candles,
+      marketSections,
       signals: this.signals(),
       bubbles: this.bubbles(),
       updatedAt: new Date().toISOString()
@@ -103,6 +106,34 @@ export class MarketService {
         ytdChange: Math.round((sector.ytdChange + Math.sin(Date.now() / 210000 + index) * 2.5) * 10) / 10
       };
     });
+  }
+
+  private async marketSections(indices: MarketQuote[], existingCandles: Record<string, MarketCandle[]>): Promise<MarketSectionSnapshot[]> {
+    const extraSections = await Promise.all(
+      MARKET_SECTIONS.map(async (section) => {
+        const quotes = await Promise.all(section.symbols.map((symbol) => this.cachedQuote(symbol)));
+        const candleEntries = await Promise.all(
+          quotes.map(async (quote) => [quote.symbol, existingCandles[quote.symbol] ?? (await this.candles(quote.symbol, quote, "1d"))] as const)
+        );
+
+        return {
+          id: section.id,
+          title: section.title,
+          quotes,
+          candles: Object.fromEntries(candleEntries)
+        };
+      })
+    );
+
+    return [
+      {
+        id: "indices",
+        title: "Indices",
+        quotes: indices,
+        candles: Object.fromEntries(indices.map((quote) => [quote.symbol, existingCandles[quote.symbol] ?? []]))
+      },
+      ...extraSections
+    ];
   }
 
   private async cachedQuote(symbol: SymbolMeta): Promise<MarketQuote> {

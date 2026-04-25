@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import clsx from "clsx";
 import {
   Activity,
@@ -8,6 +9,7 @@ import {
   Bell,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Grid2X2,
   MoreHorizontal,
   PencilLine,
@@ -29,12 +31,19 @@ import {
   YAxis
 } from "recharts";
 import { addWatchlistSymbol, fetchSnapshot, fetchSymbols, removeWatchlistSymbol } from "@/lib/api";
-import type { BubbleSector, MarketCategory, MarketQuote, MarketSignal, Snapshot, SymbolSearchResult } from "@/lib/types";
+import type { BubbleSector, MarketCategory, MarketQuote, MarketSectionSnapshot, MarketSignal, Snapshot, SymbolSearchResult } from "@/lib/types";
 import { CandlestickChart } from "./CandlestickChart";
 
 const categories: MarketCategory[] = ["Tailwinds", "Headwinds", "Divergence", "Catalysts"];
+const viewItems = [
+  { href: "/", label: "Markets", value: "markets" },
+  { href: "/signals", label: "Signals", value: "signals" },
+  { href: "/heatmap", label: "Heatmap", value: "heatmap" },
+  { href: "/more", label: "More", value: "more" }
+] as const;
 const symbolFilters = ["All", "Stocks", "Funds", "Futures", "Forex", "Crypto", "Indices", "Bonds", "Economy"] as const;
 
+type DashboardView = (typeof viewItems)[number]["value"];
 type SymbolFilter = (typeof symbolFilters)[number];
 type SymbolCandidate = SymbolSearchResult & {
   assetType: SymbolFilter;
@@ -119,11 +128,13 @@ const symbolAliases: Record<string, string> = {
   "PSEI.PS": "PSEI"
 };
 
-export function Dashboard() {
+export function Dashboard({ initialView = "markets" }: { initialView?: DashboardView }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [status, setStatus] = useState<"connecting" | "live" | "offline">("connecting");
+  const [activeView, setActiveView] = useState<DashboardView>(initialView);
   const [activeCategory, setActiveCategory] = useState<MarketCategory>("Tailwinds");
   const [selectedSymbol, setSelectedSymbol] = useState("^GSPC");
+  const [selectedMarketSymbols, setSelectedMarketSymbols] = useState<Record<string, string>>({});
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [symbolQuery, setSymbolQuery] = useState("");
   const [symbolResults, setSymbolResults] = useState<SymbolSearchResult[]>([]);
@@ -151,6 +162,10 @@ export function Dashboard() {
     Economy: 0
   });
   const [localSymbols, setLocalSymbols] = useState<string[]>([]);
+
+  useEffect(() => {
+    setActiveView(initialView);
+  }, [initialView]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("market-scope-watchlist");
@@ -190,10 +205,14 @@ export function Dashboard() {
     return snapshot?.signals.filter((signal) => signal.category === activeCategory) ?? [];
   }, [activeCategory, snapshot?.signals]);
 
+  const allSectionQuotes = useMemo(() => {
+    return snapshot?.marketSections.flatMap((section) => section.quotes) ?? [];
+  }, [snapshot?.marketSections]);
+
   const selectedQuote = useMemo(() => {
-    const quotes = [...(snapshot?.indices ?? []), ...(snapshot?.watchlist ?? [])];
+    const quotes = [...(snapshot?.indices ?? []), ...(snapshot?.watchlist ?? []), ...allSectionQuotes];
     return quotes.find((quote) => quote.symbol === selectedSymbol) ?? quotes[0];
-  }, [selectedSymbol, snapshot]);
+  }, [allSectionQuotes, selectedSymbol, snapshot]);
 
   useEffect(() => {
     if (selectedQuote && selectedQuote.symbol !== selectedSymbol) {
@@ -370,7 +389,7 @@ export function Dashboard() {
         </aside>
 
         <section className="min-w-0">
-          <MarketTopBar updatedAt={snapshot?.updatedAt} status={status} />
+          <MarketTopBar activeView={activeView} onViewChange={setActiveView} updatedAt={snapshot?.updatedAt} status={status} />
 
           <div className="px-5 py-5 sm:px-8 lg:px-10">
             <div className="mx-auto max-w-[1320px]">
@@ -379,37 +398,30 @@ export function Dashboard() {
                 <span>{snapshot ? `Updated ${new Date(snapshot.updatedAt).toLocaleTimeString()}` : "Loading prices"}</span>
               </div>
 
-              <div className="flex gap-4 overflow-x-auto pb-2">
-                {(snapshot?.indices ?? []).map((quote) => (
-                  <IndexPill
-                    key={quote.symbol}
-                    quote={quote}
-                    selected={quote.symbol === selectedSymbol}
-                    onSelect={() => setSelectedSymbol(quote.symbol)}
-                  />
-                ))}
-                {!snapshot && Array.from({ length: 4 }).map((_, index) => <IndexSkeleton key={index} />)}
-              </div>
+              {activeView === "markets" && (
+                <MarketsView
+                  sections={snapshot?.marketSections ?? []}
+                  selectedMarketSymbols={selectedMarketSymbols}
+                  selectedSymbol={selectedSymbol}
+                  onSelect={(sectionId, symbol) => {
+                    setSelectedMarketSymbols((current) => ({ ...current, [sectionId]: symbol }));
+                    setSelectedSymbol(symbol);
+                  }}
+                />
+              )}
 
-              <section className="mt-5 border-y border-line py-5">
-                {selectedQuote ? (
-                  <CandlestickChart candles={snapshot?.candles[selectedQuote.symbol] ?? []} quote={selectedQuote} symbol={selectedQuote.symbol} />
-                ) : (
-                  <div className="h-[520px] animate-pulse rounded-md bg-elevated" />
-                )}
-              </section>
-
-              <div className="mt-8 grid gap-4 2xl:grid-cols-[1.25fr_0.75fr]">
-                <SignalsPanel
+              {activeView === "signals" && (
+                <SignalsPage
                   activeCategory={activeCategory}
+                  allSignals={snapshot?.signals ?? []}
                   onSelect={setActiveCategory}
                   signals={selectedSignals}
-                  allSignals={snapshot?.signals ?? []}
                 />
-                <BubbleMonitor sectors={snapshot?.bubbles ?? []} />
-              </div>
+              )}
 
-          <WatchlistMomentum quotes={snapshot?.watchlist ?? []} />
+              {activeView === "heatmap" && <HeatmapPage sectors={snapshot?.bubbles ?? []} />}
+
+              {activeView === "more" && <MorePage quotes={snapshot?.watchlist ?? []} />}
             </div>
           </div>
         </section>
@@ -432,7 +444,17 @@ export function Dashboard() {
   );
 }
 
-function MarketTopBar({ status, updatedAt }: { status: "connecting" | "live" | "offline"; updatedAt?: string }) {
+function MarketTopBar({
+  activeView,
+  onViewChange,
+  status,
+  updatedAt
+}: {
+  activeView: DashboardView;
+  onViewChange: (view: DashboardView) => void;
+  status: "connecting" | "live" | "offline";
+  updatedAt?: string;
+}) {
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-line bg-ink px-5 lg:px-8">
       <div className="flex min-w-0 items-center gap-6">
@@ -446,18 +468,19 @@ function MarketTopBar({ status, updatedAt }: { status: "connecting" | "live" | "
           />
         </label>
         <nav className="hidden items-center gap-7 text-sm font-semibold md:flex">
-          <a className="text-foreground" href="#markets">
-            Markets
-          </a>
-          <a className="text-muted transition hover:text-foreground" href="#signals">
-            Signals
-          </a>
-          <a className="text-muted transition hover:text-foreground" href="#heatmap">
-            Heatmap
-          </a>
-          <a className="text-muted transition hover:text-foreground" href="#more">
-            More
-          </a>
+          {viewItems.map((item) => (
+            <Link
+              key={item.value}
+              href={item.href}
+              onClick={() => onViewChange(item.value)}
+              className={clsx(
+                "transition hover:text-foreground",
+                activeView === item.value ? "text-foreground" : "text-muted"
+              )}
+            >
+              {item.label}
+            </Link>
+          ))}
         </nav>
       </div>
       <div className="flex items-center gap-3">
@@ -849,6 +872,89 @@ function SymbolBadge({ large = false, symbol }: { large?: boolean; symbol: strin
   );
 }
 
+function MarketsView({
+  onSelect,
+  sections,
+  selectedMarketSymbols,
+  selectedSymbol
+}: {
+  onSelect: (sectionId: string, symbol: string) => void;
+  sections: MarketSectionSnapshot[];
+  selectedMarketSymbols: Record<string, string>;
+  selectedSymbol: string;
+}) {
+  if (!sections.length) {
+    return (
+      <div className="space-y-8">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <section key={index} className="border-y border-line py-5">
+            <div className="mb-4 h-9 w-48 animate-pulse rounded bg-elevated" />
+            <div className="mb-5 flex gap-4 overflow-hidden">
+              {Array.from({ length: 4 }).map((__, skeletonIndex) => <IndexSkeleton key={skeletonIndex} />)}
+            </div>
+            <div className="h-[520px] animate-pulse rounded-md bg-elevated" />
+          </section>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-10">
+      {sections.map((section) => (
+        <MarketSection
+          key={section.id}
+          section={section}
+          selectedSymbol={selectedMarketSymbols[section.id] ?? (section.quotes.some((quote) => quote.symbol === selectedSymbol) ? selectedSymbol : undefined)}
+          onSelect={(symbol) => onSelect(section.id, symbol)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function MarketSection({
+  onSelect,
+  section,
+  selectedSymbol
+}: {
+  onSelect: (symbol: string) => void;
+  section: MarketSectionSnapshot;
+  selectedSymbol?: string;
+}) {
+  const selectedQuote = section.quotes.find((quote) => quote.symbol === selectedSymbol) ?? section.quotes[0];
+
+  return (
+    <section className="border-y border-line py-5">
+      <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
+        {section.title}
+        <ChevronRight className="mt-1 h-7 w-7 text-muted" />
+      </div>
+
+      <div className="mb-5 flex gap-4 overflow-x-auto pb-2">
+        {section.quotes.map((quote) => (
+          <IndexPill
+            key={quote.symbol}
+            quote={quote}
+            selected={quote.symbol === selectedQuote?.symbol}
+            onSelect={() => onSelect(quote.symbol)}
+          />
+        ))}
+      </div>
+
+      {selectedQuote ? (
+        <CandlestickChart
+          candles={section.candles[selectedQuote.symbol] ?? []}
+          quote={selectedQuote}
+          symbol={selectedQuote.symbol}
+        />
+      ) : (
+        <div className="h-[520px] animate-pulse rounded-md bg-elevated" />
+      )}
+    </section>
+  );
+}
+
 function IndexPill({ quote, selected, onSelect }: { quote: MarketQuote; selected: boolean; onSelect: () => void }) {
   const positive = quote.change >= 0;
   const flash = useFlashOnChange(quote.price);
@@ -877,6 +983,52 @@ function IndexPill({ quote, selected, onSelect }: { quote: MarketQuote; selected
         </div>
       </div>
     </button>
+  );
+}
+
+function SignalsPage({
+  activeCategory,
+  allSignals,
+  onSelect,
+  signals
+}: {
+  activeCategory: MarketCategory;
+  allSignals: MarketSignal[];
+  onSelect: (category: MarketCategory) => void;
+  signals: MarketSignal[];
+}) {
+  return (
+    <section className="border-y border-line py-5">
+      <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
+        Signals
+        <ChevronRight className="mt-1 h-7 w-7 text-muted" />
+      </div>
+      <SignalsPanel activeCategory={activeCategory} allSignals={allSignals} onSelect={onSelect} signals={signals} />
+    </section>
+  );
+}
+
+function HeatmapPage({ sectors }: { sectors: BubbleSector[] }) {
+  return (
+    <section className="border-y border-line py-5">
+      <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
+        Heatmap
+        <ChevronRight className="mt-1 h-7 w-7 text-muted" />
+      </div>
+      <BubbleMonitor sectors={sectors} />
+    </section>
+  );
+}
+
+function MorePage({ quotes }: { quotes: MarketQuote[] }) {
+  return (
+    <section className="border-y border-line py-5">
+      <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
+        More
+        <ChevronRight className="mt-1 h-7 w-7 text-muted" />
+      </div>
+      <WatchlistMomentum quotes={quotes} />
+    </section>
   );
 }
 
@@ -1069,7 +1221,12 @@ function displaySymbol(symbol: string) {
 function inferSymbolType(symbol: string): WatchlistGroupKey {
   const normalized = symbol.toUpperCase();
 
-  if (["BTCUSD", "BTCUSDT", "ETHUSD", "SOLUSD", "XRPUSD"].includes(normalized) || normalized.includes("BTC") || normalized.includes("ETH") || normalized.endsWith("USDT")) {
+  if (
+    ["BTCUSD", "BTCUSDT", "ETHUSD", "SOLUSD", "XRPUSD", "USDT-USD", "BNB-USD"].includes(normalized) ||
+    normalized.includes("BTC") ||
+    normalized.includes("ETH") ||
+    normalized.endsWith("USDT")
+  ) {
     return "Crypto";
   }
   if (normalized.startsWith("^") || ["SPX", "PSEI.PS", "DXY"].includes(normalized)) return "Indices";
@@ -1122,8 +1279,12 @@ const symbolLogoDomains: Record<string, string> = {
   CL: "cmegroup.com",
   GC: "cmegroup.com",
   BTCUSD: "bitcoin.org",
+  "BTC-USD": "bitcoin.org",
   BTCUSDT: "bitcoin.org",
   ETHUSD: "ethereum.org",
+  "ETH-USD": "ethereum.org",
+  "USDT-USD": "tether.to",
+  "BNB-USD": "binance.com",
   SOLUSD: "solana.com",
   XRPUSD: "xrpl.org",
   SPX: "spglobal.com",

@@ -14,6 +14,29 @@ export const DEFAULT_WATCHLIST = [
   { symbol: "SM.PS", name: "SM Investments", logoUrl: logoForDomain("sminvestments.com") }
 ];
 
+export const MARKET_SECTIONS = [
+  {
+    id: "world-stocks",
+    title: "World stocks",
+    symbols: [
+      { symbol: "MSFT", name: "Microsoft", logoUrl: logoForDomain("microsoft.com") },
+      { symbol: "2222.SR", name: "Saudi Aramco", logoUrl: logoForDomain("aramco.com") },
+      { symbol: "TSM", name: "TSMC", logoUrl: logoForDomain("tsmc.com") },
+      { symbol: "MC.PA", name: "LVMH", logoUrl: logoForDomain("lvmh.com") }
+    ]
+  },
+  {
+    id: "crypto",
+    title: "Crypto",
+    symbols: [
+      { symbol: "BTC-USD", name: "Bitcoin", logoUrl: logoForDomain("bitcoin.org") },
+      { symbol: "ETH-USD", name: "Ethereum", logoUrl: logoForDomain("ethereum.org") },
+      { symbol: "USDT-USD", name: "Tether", logoUrl: logoForDomain("tether.to") },
+      { symbol: "BNB-USD", name: "BNB", logoUrl: logoForDomain("binance.com") }
+    ]
+  }
+] as const;
+
 function logoForDomain(domain: string) {
   return `https://www.google.com/s2/favicons?domain=${domain}&sz=64`;
 }
