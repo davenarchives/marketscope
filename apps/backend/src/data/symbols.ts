@@ -1,10 +1,10 @@
 import type { BubbleSector, MarketSignal } from "../types.js";
 
 export const INDEX_SYMBOLS = [
-  { symbol: "^GSPC", finnhubSymbol: "SPY", name: "S&P 500", logoUrl: logoForDomain("ssga.com") },
-  { symbol: "^NDX", finnhubSymbol: "QQQ", name: "Nasdaq 100", logoUrl: logoForDomain("invesco.com") },
-  { symbol: "^DJI", finnhubSymbol: "DIA", name: "Dow Jones", logoUrl: logoForDomain("spglobal.com") },
-  { symbol: "PSEI.PS", finnhubSymbol: "PSEI.PS", name: "PSEi" }
+  { symbol: "^GSPC", name: "S&P 500", logoUrl: logoForDomain("ssga.com") },
+  { symbol: "^NDX", name: "Nasdaq 100", logoUrl: logoForDomain("invesco.com") },
+  { symbol: "^DJI", name: "Dow Jones", logoUrl: logoForDomain("spglobal.com") },
+  { symbol: "PSEI.PS", name: "PSEi" }
 ];
 
 export const DEFAULT_WATCHLIST = [
