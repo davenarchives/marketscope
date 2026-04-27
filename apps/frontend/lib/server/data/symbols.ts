@@ -34,6 +34,26 @@ export const MARKET_SECTIONS = [
       { symbol: "USDT-USD", name: "Tether", logoUrl: logoForDomain("tether.to") },
       { symbol: "BNB-USD", name: "BNB", logoUrl: logoForDomain("binance.com") }
     ]
+  },
+  {
+    id: "futures",
+    title: "Futures and commodities",
+    symbols: [
+      { symbol: "GC=F", name: "Gold", logoUrl: logoForDomain("cmegroup.com") },
+      { symbol: "SI=F", name: "Silver", logoUrl: logoForDomain("cmegroup.com") },
+      { symbol: "HG=F", name: "Copper", logoUrl: logoForDomain("cmegroup.com") },
+      { symbol: "PL=F", name: "Platinum", logoUrl: logoForDomain("cmegroup.com") }
+    ]
+  },
+  {
+    id: "forex",
+    title: "Forex and currencies",
+    symbols: [
+      { symbol: "EURUSD=X", name: "EUR to USD", logoUrl: logoForDomain("ecb.europa.eu") },
+      { symbol: "JPYUSD=X", name: "JPY to USD", logoUrl: logoForDomain("boj.or.jp") },
+      { symbol: "GBPUSD=X", name: "GBP to USD", logoUrl: logoForDomain("bankofengland.co.uk") },
+      { symbol: "CHFUSD=X", name: "CHF to USD", logoUrl: logoForDomain("snb.ch") }
+    ]
   }
 ] as const;
 

@@ -55,6 +55,8 @@ type WatchlistGroupKey = Exclude<SymbolFilter, "All">;
 
 const watchlistGroupOrder: WatchlistGroupKey[] = ["Indices", "Stocks", "Funds", "Futures", "Forex", "Crypto", "Bonds", "Economy"];
 const visibleEmptyWatchlistGroups = new Set<WatchlistGroupKey>(["Indices", "Stocks", "Futures", "Forex", "Crypto"]);
+const watchlistStorageKey = "market-scope-watchlist";
+const hiddenIndicesStorageKey = "market-scope-hidden-indices";
 
 const suggestedSymbols: SymbolCandidate[] = [
   { symbol: "XAUUSD", name: "Gold", assetType: "Forex", exchange: "OANDA", market: "commodity cfd" },
@@ -145,11 +147,11 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
     Indices: true,
     Stocks: true,
     Funds: true,
-    Futures: false,
-    Forex: false,
-    Crypto: false,
-    Bonds: false,
-    Economy: false
+    Futures: true,
+    Forex: true,
+    Crypto: true,
+    Bonds: true,
+    Economy: true
   });
   const previousWatchlistGroupCountsRef = useRef<Record<WatchlistGroupKey, number>>({
     Indices: 0,
@@ -162,15 +164,21 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
     Economy: 0
   });
   const [localSymbols, setLocalSymbols] = useState<string[]>([]);
+  const [hiddenIndexSymbols, setHiddenIndexSymbols] = useState<string[]>([]);
 
   useEffect(() => {
     setActiveView(initialView);
   }, [initialView]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem("market-scope-watchlist");
+    const stored = window.localStorage.getItem(watchlistStorageKey);
     if (stored) {
       setLocalSymbols(JSON.parse(stored) as string[]);
+    }
+
+    const hiddenIndices = window.localStorage.getItem(hiddenIndicesStorageKey);
+    if (hiddenIndices) {
+      setHiddenIndexSymbols(JSON.parse(hiddenIndices) as string[]);
     }
   }, []);
 
@@ -252,12 +260,22 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
   }, [isAddDialogOpen, symbolQuery]);
 
   const addedSymbols = useMemo(() => {
-    return new Set([...(snapshot?.indices ?? []), ...(snapshot?.watchlist ?? [])].map((quote) => quote.symbol.toUpperCase()));
-  }, [snapshot]);
+    const hidden = new Set(hiddenIndexSymbols.map((symbol) => symbol.toUpperCase()));
+
+    return new Set(
+      [...(snapshot?.indices ?? []).filter((quote) => !hidden.has(quote.symbol.toUpperCase())), ...(snapshot?.watchlist ?? [])].map((quote) =>
+        quote.symbol.toUpperCase()
+      )
+    );
+  }, [hiddenIndexSymbols, snapshot]);
 
   const builtInIndexSymbols = useMemo(() => {
     return new Set((snapshot?.indices ?? []).map((quote) => quote.symbol.toUpperCase()));
   }, [snapshot]);
+
+  const hiddenIndexSymbolSet = useMemo(() => {
+    return new Set(hiddenIndexSymbols.map((symbol) => symbol.toUpperCase()));
+  }, [hiddenIndexSymbols]);
 
   const dialogSymbols = useMemo(() => {
     const baseSymbols = symbolQuery.trim()
@@ -275,14 +293,16 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
   const watchlistGroups = useMemo(() => {
     const groups = Object.fromEntries(watchlistGroupOrder.map((group) => [group, [] as MarketQuote[]])) as Record<WatchlistGroupKey, MarketQuote[]>;
 
-    (snapshot?.indices ?? []).forEach((quote) => groups.Indices.push(quote));
+    (snapshot?.indices ?? [])
+      .filter((quote) => !hiddenIndexSymbolSet.has(quote.symbol.toUpperCase()))
+      .forEach((quote) => groups.Indices.push(quote));
     (snapshot?.watchlist ?? []).forEach((quote) => {
       const group = inferSymbolType(quote.symbol);
       groups[group].push(quote);
     });
 
     return groups;
-  }, [snapshot]);
+  }, [hiddenIndexSymbolSet, snapshot]);
 
   useEffect(() => {
     setOpenWatchlistGroups((current) => {
@@ -311,10 +331,19 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
 
     setAddingSymbol(next);
     try {
+      if (builtInIndexSymbols.has(next)) {
+        const hidden = hiddenIndexSymbols.filter((symbol) => symbol.toUpperCase() !== next);
+        setHiddenIndexSymbols(hidden);
+        window.localStorage.setItem(hiddenIndicesStorageKey, JSON.stringify(hidden));
+        setSelectedSymbol(next);
+        if (closeDialog) setIsAddDialogOpen(false);
+        return;
+      }
+
       await addWatchlistSymbol(next, candidate.name);
       const stored = Array.from(new Set([...localSymbols, next]));
       setLocalSymbols(stored);
-      window.localStorage.setItem("market-scope-watchlist", JSON.stringify(stored));
+      window.localStorage.setItem(watchlistStorageKey, JSON.stringify(stored));
       setSelectedSymbol(next);
       setSnapshot(await fetchSnapshot());
       if (closeDialog) setIsAddDialogOpen(false);
@@ -324,18 +353,33 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
   }
 
   async function removeSymbol(nextSymbol: string) {
+    const normalized = nextSymbol.toUpperCase();
+
+    if (builtInIndexSymbols.has(normalized)) {
+      const hidden = Array.from(new Set([...hiddenIndexSymbols, normalized]));
+      setHiddenIndexSymbols(hidden);
+      window.localStorage.setItem(hiddenIndicesStorageKey, JSON.stringify(hidden));
+
+      if (selectedSymbol.toUpperCase() === normalized) {
+        const nextQuote = [...(snapshot?.indices ?? []), ...(snapshot?.watchlist ?? [])].find((quote) => !hidden.includes(quote.symbol.toUpperCase()));
+        if (nextQuote) setSelectedSymbol(nextQuote.symbol);
+      }
+
+      return;
+    }
+
     await removeWatchlistSymbol(nextSymbol);
     const stored = localSymbols.filter((item) => item !== nextSymbol);
     setLocalSymbols(stored);
-    window.localStorage.setItem("market-scope-watchlist", JSON.stringify(stored));
+    window.localStorage.setItem(watchlistStorageKey, JSON.stringify(stored));
     setSnapshot(await fetchSnapshot());
   }
 
   return (
     <main className="min-h-screen bg-ink text-foreground">
-      <div className="grid min-h-screen lg:grid-cols-[380px_minmax(0,1fr)]">
-        <aside className="border-b border-line bg-panel lg:border-b-0 lg:border-r">
-          <div className="flex h-16 items-center justify-between border-b border-line px-5">
+      <div className="min-h-screen lg:pl-[380px]">
+        <aside className="border-b border-line bg-panel lg:fixed lg:inset-y-0 lg:left-0 lg:z-30 lg:flex lg:w-[380px] lg:flex-col lg:border-b-0 lg:border-r">
+          <div className="flex h-16 shrink-0 items-center justify-between border-b border-line px-5">
             <button type="button" className="flex items-center gap-2 text-base font-semibold" aria-label="Watchlist menu">
               Watchlist
               <ChevronDown className="h-4 w-4 text-muted" />
@@ -347,7 +391,7 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
             </div>
           </div>
 
-          <div className="grid grid-cols-[minmax(0,1.25fr)_0.75fr_0.7fr_0.7fr_32px] border-b border-line px-4 py-2 text-xs font-medium text-muted">
+          <div className="grid shrink-0 grid-cols-[minmax(0,1.25fr)_0.75fr_0.7fr_0.7fr_32px] border-b border-line px-4 py-2 text-xs font-medium text-muted">
             <span>Symbol</span>
             <span className="text-right">Last</span>
             <span className="text-right">Chg</span>
@@ -355,7 +399,7 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
             <span />
           </div>
 
-          <div className="max-h-[calc(100vh-12rem)] overflow-y-auto py-2 lg:max-h-none">
+          <div className="py-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
             {snapshot ? (
               <>
                 {watchlistGroupOrder.map((group) => {
@@ -371,7 +415,6 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
                       title={group.toUpperCase()}
                       quotes={quotes}
                       selectedSymbol={selectedSymbol}
-                      lockedSymbols={builtInIndexSymbols}
                       open={openWatchlistGroups[group]}
                       onToggle={() => setOpenWatchlistGroups((current) => ({ ...current, [group]: !current[group] }))}
                       onSelect={setSelectedSymbol}
@@ -393,11 +436,6 @@ export function Dashboard({ initialView = "markets" }: { initialView?: Dashboard
 
           <div className="px-5 py-5 sm:px-8 lg:px-10">
             <div className="mx-auto max-w-[1320px]">
-              <div className="mb-3 flex items-center gap-2 text-sm text-muted">
-                <RefreshCcw className="h-4 w-4" />
-                <span>{snapshot ? `Updated ${new Date(snapshot.updatedAt).toLocaleTimeString()}` : "Loading prices"}</span>
-              </div>
-
               {activeView === "markets" && (
                 <MarketsView
                   sections={snapshot?.marketSections ?? []}
@@ -483,18 +521,12 @@ function MarketTopBar({
           ))}
         </nav>
       </div>
-      <div className="flex items-center gap-3">
-        <span
-          className={clsx(
-            "h-2.5 w-2.5 rounded-full",
-            status === "live" && "bg-teal-400",
-            status === "connecting" && "bg-amber-300",
-            status === "offline" && "bg-rose-400"
-          )}
-          title={updatedAt ? `Updated ${new Date(updatedAt).toLocaleTimeString()}` : "Connecting"}
-        />
-        <IconButton label="Refresh" icon={<RefreshCcw className="h-4 w-4" />} />
-        <div className="grid h-10 w-10 place-items-center rounded-full bg-teal-300 text-lg font-semibold text-slate-950">D</div>
+      <div
+        className="flex shrink-0 items-center gap-2 text-sm text-muted"
+        title={status === "offline" ? "Offline" : updatedAt ? `Updated ${new Date(updatedAt).toLocaleTimeString()}` : "Connecting"}
+      >
+        <RefreshCcw className="h-4 w-4" />
+        <span>{updatedAt ? `Updated ${new Date(updatedAt).toLocaleTimeString()}` : "Loading prices"}</span>
       </div>
     </header>
   );
@@ -661,7 +693,6 @@ function AddSymbolDialog({
 }
 
 function WatchlistGroup({
-  lockedSymbols,
   onRemove,
   onSelect,
   onToggle,
@@ -670,7 +701,6 @@ function WatchlistGroup({
   selectedSymbol,
   title
 }: {
-  lockedSymbols: Set<string>;
   onRemove?: (symbol: string) => void;
   onSelect: (symbol: string) => void;
   onToggle: () => void;
@@ -680,14 +710,11 @@ function WatchlistGroup({
   title: string;
 }) {
   return (
-    <section className={quotes.length ? "mb-4" : ""}>
+    <section>
       <button
         type="button"
         onClick={onToggle}
-        className={clsx(
-          "flex h-10 w-full items-center gap-2 border-line px-4 text-left text-xs font-medium text-muted transition hover:bg-elevated hover:text-foreground",
-          !quotes.length && "border-b"
-        )}
+        className="flex h-10 w-full items-center gap-2 border-line px-4 text-left text-xs font-medium text-muted transition hover:bg-elevated hover:text-foreground"
         aria-expanded={open}
       >
         <ChevronDown className={clsx("h-3.5 w-3.5 transition-transform", !open && "-rotate-90")} />
@@ -695,19 +722,15 @@ function WatchlistGroup({
       </button>
       {open && quotes.length > 0 && (
         <div>
-          {quotes.map((quote) => {
-            const canRemove = onRemove && !lockedSymbols.has(quote.symbol.toUpperCase());
-
-            return (
-              <WatchlistTableRow
-                key={quote.symbol}
-                quote={quote}
-                selected={quote.symbol === selectedSymbol}
-                onSelect={() => onSelect(quote.symbol)}
-                onRemove={canRemove ? () => onRemove(quote.symbol) : undefined}
-              />
-            );
-          })}
+          {quotes.map((quote) => (
+            <WatchlistTableRow
+              key={quote.symbol}
+              quote={quote}
+              selected={quote.symbol === selectedSymbol}
+              onSelect={() => onSelect(quote.symbol)}
+              onRemove={onRemove ? () => onRemove(quote.symbol) : undefined}
+            />
+          ))}
         </div>
       )}
     </section>
@@ -768,7 +791,7 @@ function SelectedInstrumentPanel({ quote }: { quote: MarketQuote }) {
   const positive = quote.change >= 0;
 
   return (
-    <section className="border-t border-line p-5">
+    <section className="shrink-0 border-t border-line bg-panel p-5">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex min-w-0 items-center gap-3">
           <LogoBadge quote={quote} large />
@@ -887,7 +910,7 @@ function MarketsView({
     return (
       <div className="space-y-8">
         {Array.from({ length: 3 }).map((_, index) => (
-          <section key={index} className="border-y border-line py-5">
+          <section key={index} className="py-5">
             <div className="mb-4 h-9 w-48 animate-pulse rounded bg-elevated" />
             <div className="mb-5 flex gap-4 overflow-hidden">
               {Array.from({ length: 4 }).map((__, skeletonIndex) => <IndexSkeleton key={skeletonIndex} />)}
@@ -900,7 +923,7 @@ function MarketsView({
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       {sections.map((section) => (
         <MarketSection
           key={section.id}
@@ -925,7 +948,7 @@ function MarketSection({
   const selectedQuote = section.quotes.find((quote) => quote.symbol === selectedSymbol) ?? section.quotes[0];
 
   return (
-    <section className="border-y border-line py-5">
+    <section className="py-5">
       <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
         {section.title}
         <ChevronRight className="mt-1 h-7 w-7 text-muted" />
@@ -998,7 +1021,7 @@ function SignalsPage({
   signals: MarketSignal[];
 }) {
   return (
-    <section className="border-y border-line py-5">
+    <section className="py-5">
       <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
         Signals
         <ChevronRight className="mt-1 h-7 w-7 text-muted" />
@@ -1010,7 +1033,7 @@ function SignalsPage({
 
 function HeatmapPage({ sectors }: { sectors: BubbleSector[] }) {
   return (
-    <section className="border-y border-line py-5">
+    <section className="py-5">
       <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
         Heatmap
         <ChevronRight className="mt-1 h-7 w-7 text-muted" />
@@ -1022,7 +1045,7 @@ function HeatmapPage({ sectors }: { sectors: BubbleSector[] }) {
 
 function MorePage({ quotes }: { quotes: MarketQuote[] }) {
   return (
-    <section className="border-y border-line py-5">
+    <section className="py-5">
       <div className="mb-5 flex items-center gap-1 text-3xl font-semibold tracking-normal">
         More
         <ChevronRight className="mt-1 h-7 w-7 text-muted" />

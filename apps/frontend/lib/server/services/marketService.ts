@@ -151,6 +151,11 @@ export class MarketService {
     const index = INDEX_SYMBOLS.find((item) => item.symbol.toUpperCase() === normalized);
     if (index) return index;
 
+    for (const section of MARKET_SECTIONS) {
+      const marketSectionSymbol = section.symbols.find((item) => item.symbol.toUpperCase() === normalized);
+      if (marketSectionSymbol) return marketSectionSymbol;
+    }
+
     const watchlist = await this.watchlist.list();
     const item = watchlist.find((candidate) => candidate.symbol.toUpperCase() === normalized);
     if (item) return item;
@@ -164,7 +169,11 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function round(value: number): number {
-  return Math.round(value * 100) / 100;
+  const abs = Math.abs(value);
+  const decimals = abs < 0.01 ? 8 : abs < 2 ? 6 : abs < 10 ? 5 : abs < 100 ? 4 : 2;
+  const factor = 10 ** decimals;
+
+  return Math.round(value * factor) / factor;
 }
 
 function updateLastCandle(candles: MarketCandle[], price: number): MarketCandle[] {

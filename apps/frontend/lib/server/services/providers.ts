@@ -380,7 +380,11 @@ function seededPrice(symbol: string): number {
 }
 
 function round(value: number): number {
-  return Math.round(value * 100) / 100;
+  const abs = Math.abs(value);
+  const decimals = abs < 0.01 ? 8 : abs < 2 ? 6 : abs < 10 ? 5 : abs < 100 ? 4 : 2;
+  const factor = 10 ** decimals;
+
+  return Math.round(value * factor) / factor;
 }
 
 function normalizeCandle(candle: {
